@@ -19,4 +19,4 @@ RUN if [ ! -d /var/log/testlogs ]; then mkdir /var/log/testlogs; fi
 # Create an empty log so that the initital tail -f doesn't fail
 RUN touch /var/log/testlogs/ping.log
 
-CMD cron && ping 8.8.8.8 | sed -e "s~^~`date '+%Y-%m-%d %H:%M:%S'` | `cat /etc/timezone` | ~" >> /var/log/testlogs/ping.log && tail -f /var/log/ping.log
+CMD cron && ping 8.8.8.8  | while read pong; do echo "`date '+%Y-%m-%d %H:%M:%S'` | `cat /etc/timezone` | : $pong"; done >> /var/log/testlogs/ping.log && tail -f /var/log/ping.log
