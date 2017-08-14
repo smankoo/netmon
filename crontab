@@ -1,4 +1,4 @@
-* * * * * /usr/sbin/logrotate --force /etc/logrotate.conf >> /var/log/logrotate.log 2>&1
+25 * * * * /usr/sbin/logrotate /etc/logrotate.conf >> /var/log/logrotate.log 2>&1
 
-* * * * * /tests/speedtest.sh >> /var/log/testlogs/speedtest.log 2>&1
-* * * * * /tests/wget.sh >> /var/log/testlogs/wget.log 2>&1
+00,30 * * * * /tests/speedtest.sh >> /var/log/testlogs/speedtest.log 2>&1
+15,45 * * * * /tests/wget.sh >> /var/log/testlogs/wget.log 2>&1
