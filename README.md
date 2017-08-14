@@ -7,11 +7,11 @@ Run the following command to build a new Docker image
 
 Use the following command to run the container
 
-docker run \
-  --name netmon
-  -it -d \
-  -v ~/testlogs:/var/log/testlogs \
-  smankoo/netmon
+    docker run \
+      --name netmon
+      -it -d \
+      -v ~/testlogs:/var/log/testlogs \
+      smankoo/netmon
 
 
 
