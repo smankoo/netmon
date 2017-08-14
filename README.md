@@ -4,7 +4,11 @@ A tool for monitoring internet connection quality
 Run the following command to build a new Docker image
 
     docker build -t smankoo/newcron .
-    docker run --name newcron -it -d smankoo/newcron
+
+Use the following command to run the container
+
+    docker run --name netmon -it -d -v ~/testlogs:/var/log/testlogs smankoo/netmon
+
 
 
   # Developer Notes
