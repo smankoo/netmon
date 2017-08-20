@@ -10,13 +10,11 @@ RUN chmod 644 /etc/logrotate.conf
 
 # Copy test scripts
 ADD tests /tests
+RUN chmod 755 /tests/*
 
 # Install crontab to run logrotate
 RUN crontab /tmp/crontab-src
 
-RUN if [ ! -d /var/log/testlogs ]; then mkdir /var/log/testlogs; fi
+RUN if [ ! -d /var/log/netmon-logs ]; then mkdir /var/log/netmon-logs; fi
 
-# Create an empty log so that the initital tail -f doesn't fail
-RUN touch /var/log/testlogs/ping.log
-
-CMD cron && ping 8.8.8.8  | while read pong; do echo "`date '+%Y-%m-%d %H:%M:%S'` | `cat /etc/timezone` | : $pong"; done >> /var/log/testlogs/ping.log && tail -f /var/log/ping.log
+CMD cron && bash -c '/tests/ping.sh'
