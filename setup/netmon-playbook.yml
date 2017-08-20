@@ -1,0 +1,153 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+
+  - name: query linux kernel release
+    shell: uname -r | xargs
+    register: kernel_release 
+
+  - name: query username
+    shell: whoami | xargs
+    register: remote_user 
+    
+  - name: Add docker Key 17
+    command: bash -c 'echo deb https://apt.dockerproject.org/repo ubuntu-trusty main > /etc/apt/sources.list.d/docker.list' && apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net:11371 --recv-keys 58118E89F3A912897C070ADBF76221572C52609D creates=/etc/apt/sources.list.d/docker.list
+    when: ansible_lsb.id == 'LinuxMint' and ansible_lsb.major_release == '17'
+  
+  - name: Remove lxc-docker Package
+    apt:
+      name: lxc-docker
+      state: absent
+      purge: yes
+      force: yes
+    retries: 3
+    delay: 10
+    register: result
+    until: result | success
+    
+  - name: Install Docker on Mint 17
+    apt:
+      name: "{{ item }}"
+      state: present
+      update_cache: yes
+      force: yes
+      allow_unauthenticated: yes
+    with_items:
+      - linux-image-extra-{{ kernel_release.stdout }}
+      - linux-headers-generic
+      - docker-engine
+      - python-pip
+    retries: 3
+    delay: 10
+    register: result
+    until: result | success
+    when: ansible_lsb.id == 'LinuxMint' and ansible_lsb.major_release == '17'
+
+  - name: Install Docker-Prereqs on Mint 18
+    apt:
+      name: "{{ item }}"
+      state: present
+      update_cache: yes
+      force: yes
+      allow_unauthenticated: yes
+    with_items:
+      - linux-image-generic
+      - linux-image-extra-virtual
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+      - python-pip
+    retries: 3
+    delay: 10
+    register: result
+    until: result | success
+    when: ansible_lsb.id == 'LinuxMint' and ansible_lsb.major_release == '18'
+
+  - name: Add docker Key 18
+    command: bash -c 'sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable" && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -'
+    when: ansible_lsb.id == 'LinuxMint' and ansible_lsb.major_release == '18'
+    retries: 3
+    delay: 10
+    register: result
+    until: result | success
+    
+    
+  - name: Install Docker on Mint 18
+    apt:
+      name: "{{ item }}"
+      state: present
+      update_cache: yes
+      force: yes
+      allow_unauthenticated: yes
+    with_items:
+      - docker-ce
+    retries: 3
+    delay: 10
+    register: result
+    until: result | success
+    when: ansible_lsb.id == 'LinuxMint' and ansible_lsb.major_release == '18'
+
+  - name: time for some docker py
+    pip:
+      name: docker-py
+    retries: 3
+    delay: 10
+    register: result
+    until: result | success
+    
+      
+  - debug:
+        msg: "ansible_lsb.id is {{ ansible_lsb.id }}"
+    
+  - name: docker group
+    group:
+      name: docker
+      state: present
+      system: yes
+  
+  - name: enable docker service
+    service:
+      name: docker
+      enabled: yes
+  
+  - name: start docker service
+    service:
+      name: docker
+      state: started
+        
+  - name: add "{{ remote_user.stdout }}" to docker group
+    user:
+      name: "{{ remote_user.stdout }}"
+      groups: docker
+      append: yes
+   
+  - name: update docker image
+    docker_image:
+      name: smankoo/netmon
+      state: present
+      force: yes
+    retries: 3
+    delay: 10
+    register: result
+    until: result | success
+    
+
+  - name: remove docker container
+    docker_container:
+      name: netmon
+      image: smankoo/netmon
+      state: absent
+  
+  - name: start docker container
+    docker_container:
+      name: netmon
+      image: smankoo/netmon
+      state: started
+      interactive: yes
+      tty: yes
+      detach: yes
+      restart_policy: always
+      volumes:
+        - /netmon-logs:/var/log/netmon-logs
