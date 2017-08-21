@@ -13,7 +13,7 @@ A tool for monitoring internet connection quality
     cd netmon && vagrant up
 
 ### Option 2 (lightest): Run as a docker container
-#### (Ensure that you have docker installed and running)
+(Ensure that you have docker installed and running)
 
     docker run --name netmon -i -t -d -v /netmon-logs:/var/log/netmon-logs smankoo/netmon
 
