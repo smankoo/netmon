@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>netmon — connection quality</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="viz-root">
+  <header class="topbar">
+    <h1>netmon</h1>
+    <div class="filters">
+      <select id="probe-filter" class="probe-select" aria-label="Probe"></select>
+      <div class="range-filter" role="group" aria-label="Time range">
+        <button class="range-btn" data-hours="24">24h</button>
+        <button class="range-btn active" data-hours="168">7d</button>
+        <button class="range-btn" data-hours="720">30d</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="alert-banner" class="alert-banner hidden" role="alert"></div>
+  <div id="probe-status" class="probe-status"></div>
+
+  <section class="tiles" id="tiles" aria-label="Summary">
+    <div class="tile" id="tile-loss">
+      <div class="tile-label">Packet loss (24h)</div>
+      <div class="tile-value">–</div>
+      <div class="tile-sub"></div>
+    </div>
+    <div class="tile" id="tile-latency">
+      <div class="tile-label">Avg latency (24h)</div>
+      <div class="tile-value">–</div>
+      <div class="tile-sub"></div>
+    </div>
+    <div class="tile" id="tile-speed">
+      <div class="tile-label">Down / Up (7d avg)</div>
+      <div class="tile-value">–</div>
+      <div class="tile-sub"></div>
+    </div>
+    <div class="tile" id="tile-bufferbloat">
+      <div class="tile-label">Bufferbloat (7d)</div>
+      <div class="tile-value">–</div>
+      <div class="tile-sub">loaded − idle latency</div>
+    </div>
+    <div class="tile" id="tile-channels">
+      <div class="tile-label">Worst modem channel</div>
+      <div class="tile-value">–</div>
+      <div class="tile-sub"></div>
+    </div>
+    <div class="tile" id="tile-http">
+      <div class="tile-label">IPTV portal uptime (24h)</div>
+      <div class="tile-value">–</div>
+      <div class="tile-sub"></div>
+    </div>
+  </section>
+
+  <section class="chart-card">
+    <h2>Latency</h2>
+    <div class="chart-wrap"><canvas id="chart-latency"></canvas></div>
+  </section>
+
+  <section class="chart-card">
+    <h2>Packet loss</h2>
+    <div class="chart-wrap"><canvas id="chart-loss"></canvas></div>
+  </section>
+
+  <section class="chart-card">
+    <h2>Speed test (download / upload)</h2>
+    <div class="chart-wrap"><canvas id="chart-speed"></canvas></div>
+  </section>
+
+  <section class="chart-card">
+    <h2>Bufferbloat (idle vs. loaded latency during speed test)</h2>
+    <div class="chart-wrap"><canvas id="chart-bufferbloat"></canvas></div>
+  </section>
+
+  <section class="chart-card">
+    <div class="card-head-row">
+      <h2>Modem downstream channels — latest FEC errors <span id="modem-probe-note" class="muted-note"></span></h2>
+      <button id="toggle-modem-table" class="table-toggle">Show table</button>
+    </div>
+    <div class="chart-wrap"><canvas id="chart-modem"></canvas></div>
+    <div id="modem-table-wrap" class="table-wrap hidden">
+      <table id="modem-table">
+        <thead>
+          <tr><th>Channel</th><th>Freq (Hz)</th><th>SNR (dB)</th><th>Signal (dBmV)</th><th>Corrected</th><th>Uncorrectable</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="chart-card">
+    <div class="card-head-row">
+      <h2>IPTV portal — availability &amp; latency</h2>
+      <button id="toggle-http-table" class="table-toggle">Show recent failures</button>
+    </div>
+    <div class="chart-wrap"><canvas id="chart-http"></canvas></div>
+    <div id="http-table-wrap" class="table-wrap hidden">
+      <table id="http-table">
+        <thead>
+          <tr><th>Time</th><th>Probe</th><th>URL</th><th>Status</th><th>Error</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <span id="footer-status"></span>
+  </footer>
+</div>
+
+<script src="vendor/chart.umd.min.js"></script>
+<script src="vendor/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
