@@ -170,25 +170,61 @@ def _packet_loss(ping: list[Row]) -> dict[str, Any]:
             "samples_at_100pct_loss": sum(1 for v in vals if v >= 100),
         }
 
-    # Rolling windows that mirror the hub's own loss alert rule, so the report
-    # and the ntfy pushes can never disagree about what counted as an episode.
+    # Windows that mirror the hub's own loss alert rule, so the report and the
+    # ntfy pushes can never disagree about what counted as an episode. The hub
+    # evaluates a *trailing* window, so these slide sample by sample rather than
+    # sitting in fixed clock-aligned buckets: a solid 15 minutes of loss from
+    # 08:54 to 09:09 is exactly what the hub alerts on, and bucketing on the
+    # hour would split it in half and average each half back under the
+    # threshold. Overlapping windows are then collapsed so one episode is
+    # reported once instead of fifteen near-identical times.
     win_sec = config.LOSS_WINDOW_MINUTES * 60
-    buckets: dict[int, list[float]] = defaultdict(list)
-    for ts, _, loss in losses:
-        buckets[int(ts // win_sec)].append(loss)
-    windows = [
-        {
-            "start": iso(b * win_sec),
-            "end": iso((b + 1) * win_sec),
-            "samples": len(vals),
-            "mean_loss_pct": _r(sum(vals) / len(vals), 3),
-            "max_loss_pct": _r(max(vals)),
-        }
-        for b, vals in buckets.items()
-        if len(vals) >= config.LOSS_WINDOW_MIN_SAMPLES
-    ]
-    windows.sort(key=lambda w: w["mean_loss_pct"] or 0, reverse=True)
-    over_threshold = [w for w in windows if (w["mean_loss_pct"] or 0) >= config.LOSS_ALERT_PCT]
+    ordered = sorted(losses, key=lambda x: x[0])
+    stamps = [x[0] for x in ordered]
+    running = [0.0]
+    for _, _, loss in ordered:
+        running.append(running[-1] + loss)
+
+    windows = []
+    end_i = 0
+    for i, start_ts in enumerate(stamps):
+        stop_ts = start_ts + win_sec
+        end_i = max(end_i, i)
+        while end_i < len(stamps) and stamps[end_i] < stop_ts:
+            end_i += 1
+        n = end_i - i
+        if n < config.LOSS_WINDOW_MIN_SAMPLES:
+            continue
+        windows.append({
+            "start": iso(start_ts),
+            "end": iso(stop_ts),
+            "samples": n,
+            "mean_loss_pct": _r((running[end_i] - running[i]) / n, 3),
+            "max_loss_pct": _r(max(x[2] for x in ordered[i:end_i])),
+            "_span": (start_ts, stop_ts),
+        })
+
+    def _pick_non_overlapping(candidates, limit=None):
+        picked: list[dict[str, Any]] = []
+        for w in candidates:
+            a, b = w["_span"]
+            if any(a < c["_span"][1] and c["_span"][0] < b for c in picked):
+                continue
+            picked.append(w)
+            if limit is not None and len(picked) >= limit:
+                break
+        return picked
+
+    by_severity = sorted(windows, key=lambda w: w["mean_loss_pct"] or 0, reverse=True)
+    over_threshold = _pick_non_overlapping(
+        [w for w in by_severity if (w["mean_loss_pct"] or 0) >= config.LOSS_ALERT_PCT])
+    # Only windows that actually lost something. Listing the "worst" of a set of
+    # all-zero windows would put arbitrary timestamps in front of a reader who
+    # would reasonably assume they meant something.
+    worst_windows = _pick_non_overlapping(
+        [w for w in by_severity if (w["mean_loss_pct"] or 0) > 0], limit=5)
+    for w in windows:
+        w.pop("_span", None)
 
     # Episodes: consecutive one-minute bins in which any target lost packets.
     bin_sec = config.PING_INTERVAL_SEC
@@ -217,10 +253,10 @@ def _packet_loss(ping: list[Row]) -> dict[str, Any]:
         "mean_loss_pct": _r(sum(l for _, _, l in losses) / len(losses), 3),
         "per_target": per_target,
         f"windows_of_{int(config.LOSS_WINDOW_MINUTES)}min_over_{config.LOSS_ALERT_PCT}pct": len(over_threshold),
-        # Only windows that actually lost something. Listing the "worst" of a
-        # set of all-zero windows would put arbitrary timestamps in front of a
-        # reader who would reasonably assume they meant something.
-        "worst_windows": [w for w in windows if (w["mean_loss_pct"] or 0) > 0][:5],
+        "windows_note": f"{int(config.LOSS_WINDOW_MINUTES)}-minute windows sliding over the "
+                        "samples (the hub's alert rule is a trailing window, not a "
+                        "clock-aligned bucket); overlapping windows collapsed to one.",
+        "worst_windows": worst_windows,
         "loss_episodes_total": len(episodes),
         "worst_loss_episodes": episodes[:10],
     }
