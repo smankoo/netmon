@@ -10,6 +10,11 @@ pieces:
 - **`hub/`** — runs centrally (a VPS, a NAS, anywhere the probes can reach).
   Receives data from one or more probes, stores it, and serves the dashboard.
 
+There's also **`mcp/`** — an optional stdio MCP server that exposes the hub's
+read API to an agent, including an `netmon_incident_report` tool that reduces the
+raw samples to the loss/latency/DOCSIS/outage figures an ISP complaint actually
+needs. It's not part of the measurement pipeline; see `mcp/README.md`.
+
 They only talk to each other over one HTTP endpoint (`POST /api/ingest`),
 authenticated with a per-probe bearer token. The hub never touches your
 modem or home network; the probe never serves a UI or holds history.

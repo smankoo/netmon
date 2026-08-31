@@ -1,0 +1,4 @@
+# Official MCP Python SDK. 2.x renamed FastMCP to MCPServer - pinned to the
+# 2.x line because the import path differs between the two.
+mcp>=2.1.1,<3
+python-dotenv>=1.0
