@@ -1,0 +1,11 @@
+services:
+  netmon-hub:
+    build: .
+    image: netmon-hub:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    env_file:
+      - .env

@@ -1,0 +1,9 @@
+services:
+  netmon-probe:
+    build: .
+    image: netmon-probe:latest
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+    env_file:
+      - .env
