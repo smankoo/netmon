@@ -132,6 +132,32 @@ def test_sustained_loss_window_matches_the_hubs_own_alert_rule():
     assert loss["worst_loss_episodes"][0]["duration_sec"] == 15 * 60
 
 
+def test_sustained_loss_is_found_when_it_straddles_a_clock_aligned_boundary():
+    # Regression: with fixed 15-minute buckets, a solid 15-minute episode
+    # centred on a bucket edge got split in half and each half averaged back
+    # under the threshold, so the hub would have pushed an alert the report
+    # denied. The window has to slide.
+    edge = ((NOW - HOUR) // (15 * 60)) * (15 * 60)
+    ping = [ping_row(edge - 40 * 60 + i * 60) for i in range(20)]          # clean
+    ping += [ping_row(edge - 7 * 60 + i * 60, loss=25.0) for i in range(15)]
+    ping += [ping_row(edge + 10 * 60 + i * 60) for i in range(20)]         # clean
+    rep = report(ping=ping)
+    loss = rep["packet_loss"]
+    assert loss["windows_of_15min_over_10.0pct"] == 1, loss["worst_windows"]
+    assert loss["worst_windows"][0]["mean_loss_pct"] == 25.0
+    assert find(rep, "PACKET_LOSS_SUSTAINED")["severity"] == analysis.MAJOR
+
+
+def test_overlapping_bad_windows_collapse_to_one_episode():
+    # One 30-minute episode is one problem, not the ~30 sliding windows that
+    # each contain part of it.
+    ping = [ping_row(NOW - HOUR + i * 60, loss=40.0) for i in range(30)]
+    ping += [ping_row(NOW - 30 * 60 + i * 60) for i in range(30)]
+    loss = report(ping=ping)["packet_loss"]
+    assert loss["windows_of_15min_over_10.0pct"] == 2, "30 min holds 2 disjoint 15s"
+    assert len(loss["worst_windows"]) == 2
+
+
 def test_total_loss_outage_needs_every_target_dead():
     start = NOW - 30 * 60
     ping = []

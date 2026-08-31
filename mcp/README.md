@@ -30,8 +30,10 @@ Pulls every raw sample for the window in **one** round trip and reduces it to
 numbers with timestamps attached:
 
 - **packet loss** - share of checks that lost anything, per target; worst
-  15-minute windows (same rule the hub's own loss alert uses, so the report and
-  the ntfy pushes can't disagree); contiguous loss episodes with durations.
+  15-minute windows (*sliding*, like the trailing window the hub's own loss alert
+  uses, so the report and the ntfy pushes can't disagree - a clean 15-minute
+  episode straddling 09:00 would vanish from clock-aligned buckets);
+  contiguous loss episodes with durations.
 - **latency** - p50/p95/p99/max overall and per target, count over 100 ms,
   the ten worst spikes with timestamps.
 - **speed** - min/p05/median/max down and up; shortfall against the provisioned
