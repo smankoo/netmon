@@ -50,7 +50,7 @@ def _opt_float(name: str) -> float | None:
 #          on the VPS itself, or through a tunnel.
 ACCESS_MODE = _str("NETMON_ACCESS", "ssh").lower()
 
-SSH_TARGET = _str("NETMON_SSH_TARGET", "deploy@vps.taild6699c.ts.net")
+SSH_TARGET = _str("NETMON_SSH_TARGET", "deploy@your-vps.your-tailnet.ts.net")
 # The hub as seen from the VPS. It's published on loopback only.
 SSH_HUB_URL = _str("NETMON_SSH_HUB_URL", "http://127.0.0.1:8000").rstrip("/")
 # The hub's own env file on the VPS - where the remote side reads the secret.
