@@ -94,8 +94,12 @@ async def netmon_summary(probe: str | None = None) -> dict[str, Any]:
 @mcp.tool(
     description=(
         "List every probe that has ever reported to the netmon hub, with when it "
-        "was last seen and whether it is stale (silent longer than the hub's "
-        "PROBE_STALE_MINUTES). Use this first if a report looks emptier than expected."
+        "was last seen, whether it is stale (silent longer than that probe's own "
+        "PROBE_STALE_MINUTES_<NAME>, else the default) and whether it is still "
+        "`registered` — i.e. still holds a token and is therefore still expected "
+        "to report. A stale probe that is not registered is retired history, not a "
+        "fault: `macbook` was retired 2026-08-30 and stays listed until retention "
+        "drops its rows. Use this first if a report looks emptier than expected."
     )
 )
 async def netmon_probes() -> dict[str, Any]:

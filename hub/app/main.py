@@ -182,7 +182,18 @@ def get_probes():
         {
             "name": name,
             "last_seen": ts,
-            "stale": (now - ts) / 60 > config.PROBE_STALE_MINUTES,
+            # Per-probe, for the same reason alerts.py is: a probe running only
+            # the 1800s speed test is not stale at 10 minutes, and showing it red
+            # two thirds of the time teaches you to ignore red.
+            "stale": (now - ts) / 60 > config.probe_stale_minutes(name),
+            # Whether this probe is still supposed to exist, i.e. still holds a
+            # token. This endpoint lists every probe that has ever reported, so a
+            # retired one stays here until retention drops its rows - 180 days
+            # during which "stale" is true and means nothing. `macbook` was
+            # retired on 2026-08-30 and is exactly that. Consumers should read
+            # stale together with this: stale + registered = something to fix,
+            # stale + not registered = history.
+            "registered": name in config.EXPECTED_PROBES,
         }
         for name, ts in sorted(last_seen.items())
     ]
