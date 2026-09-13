@@ -267,3 +267,61 @@ months of raw samples is a few hundred MB at most.
   because your internet is down, that's precisely the moment you don't want
   to lose the reading. It just backs up locally and drains once connectivity
   returns.
+
+  **This is now verified rather than argued.** A modem reboot on 2026-09-13 took
+  the WAN down for 4m40s and gave `iris` its first real outage - until then the
+  outbox had only ever been exercised against a stopped hub container:
+
+  ```
+  17:06:13  sent 3 row(s) to hub, 0 still pending
+  17:07:13  could not reach hub - 3 row(s) queued locally
+  17:08:13  ... 6      17:09:14  ... 9      17:10:14  ... 12      17:11:14  ... 15
+  17:12:24  sent 18 row(s) to hub, 0 still pending
+  ```
+
+  Monotonic growth, one drain, nothing lost. The detail worth keeping is the
+  *shape* of the failure: `Temporary failure in name resolution`, not a
+  connection error. `netmon.vps.mankoo.ca` is a public CNAME into the tailnet, so
+  reaching the hub needs a working recursive resolver first - with the WAN down
+  the probe never gets as far as failing to connect. Don't match on connection
+  errors when testing this path.
+
+  Two artifacts to expect after any outage, neither a fault: ping loss of 100%
+  for the duration, and - because those rows arrive on the drain - a
+  `LOSS_ALERT_PCT` firing that the hub may timestamp at drain time rather than
+  when the loss happened.
+
+## Dating a modem reboot after the fact
+
+DOCSIS `corrected`/`uncorrectable` counters are **cumulative since boot**, so a
+reboot resets them to zero. `modem_samples` therefore records every modem restart
+retroactively, whether or not anyone was watching - which makes this table useful
+for a question it was never designed to answer.
+
+```sql
+-- a negative delta is a reboot; nothing else produces one
+WITH t AS (
+  SELECT CAST(ts/3600 AS INT) AS h, MIN(ts) AS ts, SUM(corrected) AS c
+  FROM modem_samples WHERE direction='downstream' AND error IS NULL
+  GROUP BY 1)
+SELECT datetime(ts,'unixepoch','localtime'), c,
+       c - LAG(c) OVER (ORDER BY ts) AS delta
+FROM t ORDER BY ts;
+```
+
+It earned its keep on 2026-09-13. The Hitron's DHCPv6 server turned out to read
+its LAN DNS config only at boot, so a DNS cutover to Pi-hole had applied to router
+advertisements but not to DHCPv6 option 23. Whether a reboot would fix it depended
+entirely on whether the modem had already rebooted since the config change - if it
+had, the daemon had re-read the file and genuinely ignored it, and the only
+remaining fix was lossy (disabling IPv6 on the LAN). The counter series answered
+it: `corrected` climbed 4 → 81 monotonically across all 319 hourly buckets since
+2026-08-30, so the modem had never restarted and the reboot was untested. It
+worked.
+
+Two caveats. The counters reset at 13:06 local on 2026-09-13, so the series has a
+discontinuity there and that drop is a deliberate reboot, not a line fault. And
+because a reboot destroys this evidence, cross-check against the probe's own log
+of WAN reachability, which witnessed the same event independently (dead 17:07:13 →
+17:11:54 UTC). Note the probe logs UTC while `iris`' shell is EDT - a four-hour
+offset that has already caused one wrong reading of how much data a gap covered.
