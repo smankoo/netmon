@@ -132,10 +132,72 @@ Two probes on one uplink, deliberately measuring the difference between them:
 
 | Collector | `iris` (Pi 4, wired GbE) | `imac` (2.4 GHz Wi-Fi) |
 | --- | --- | --- |
-| ping | 60s, offset 0 | 60s, offset 0 |
+| ping | 60s, offset 0 | 60s, **offset 30** |
 | http | 60s, offset 0 | disabled |
 | speed | 1800s, offset 0 | 1800s, **offset 900** |
 | modem | 900s, offset 0 | disabled |
+
+`iris` runs in Docker. **`imac` does not, and must not** — see below.
+
+#### The iMac probe runs natively, under launchd
+
+Until 2026-09-13 the iMac probe ran as a container under Colima, and every
+latency number it ever reported was fiction. Colima's user-mode network stack
+answers ICMP *inside the VM* instead of forwarding it, so `ping` succeeded
+against a loopback that was never on the network: **0.58 ms to `1.1.1.1`
+averaged over 38,958 samples**, from Montreal, where the same target is 19 ms
+from iris on the wire and ~30 ms from this Mac natively.
+
+This is the worst failure mode in the whole system, worse than an outage: the
+data was plausible-looking, self-consistent, and *good news*. A probe reporting
+sub-millisecond latency to Cloudflare does not look broken, it looks like a
+fast connection, so nothing raised an alert and nothing looked wrong on the
+dashboard for two weeks. Only comparing two probes exposed it. It also silently
+corrupted the speed samples, because `speed.collect_once()` calls the same
+`ping_once()` helper for its idle and loaded latency figures — so the
+bufferbloat measurement was fiction even with the ping collector disabled.
+
+The fabricated rows were deleted (38,958 `ping_samples`, plus the three latency
+columns NULLed on 654 `speed_samples`); the pre-purge database is at
+`/opt/netmon-hub/backups/netmon-before-imac-purge.db` on the VPS.
+
+The native deployment is three files on the Mac, outside any repo, because that
+box is hand-managed and is not in the homelab ansible inventory:
+
+```
+~/netmon-probe/.env                            0600, holds the hub token
+~/netmon-probe/run-probe.sh                    sources .env, sets PATH and OUTBOX_PATH
+~/Library/LaunchAgents/ai.netmon.probe.plist   KeepAlive, ProcessType Interactive
+~/netmon-probe/.venv                           uv venv, Python 3.12 (system python is 3.9)
+```
+
+Three things about it that are not obvious:
+
+- **`OUTBOX_PATH` must be set explicitly.** The container mounted `./data` at
+  `/data`, and `config.py` still defaults to `/data/outbox.db` — which on the
+  host is an unwritable path outside the sandbox, so the probe would either
+  fail or start a fresh queue and abandon undelivered samples.
+- **`ProcessType` is `Interactive`, deliberately.** A `Background` LaunchAgent
+  is subject to App Nap and timer coalescing, which would delay the
+  epoch-anchored slots and add the throttling's own latency to every RTT. A
+  measurement job must not be scheduled at the OS's convenience.
+- **`PATH` must include `/sbin`**, since `collectors/ping.py` shells out to
+  `ping`. launchd hands a job almost no environment.
+
+`collectors/ping.py` already handled BSD `ping` (the `-W` flag means seconds on
+Linux and milliseconds on macOS, and the summary line differs), so no code
+changed for any of this — it was purely a deployment fault.
+
+Verify it after any change to that box, rather than trusting that it runs:
+
+```bash
+ssh sumeets-imac 'tail -3 ~/netmon-probe/logs/probe.err'
+ssh sumeets-imac 'cd ~/netmon-probe && ./.venv/bin/python -c "
+from probe.collectors import ping; print(ping.collect_once())"'
+```
+
+An `avg_ms` under 5 ms to `1.1.1.1` means something is answering ICMP locally
+again and the series is worthless until it is fixed.
 
 `speed` runs on both on purpose. Both probes sit behind the same modem, so
 the *difference* between wired iris and Wi-Fi imac isolates what Wi-Fi quality
