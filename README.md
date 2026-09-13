@@ -161,6 +161,17 @@ The fabricated rows were deleted (38,958 `ping_samples`, plus the three latency
 columns NULLed on 654 `speed_samples`); the pre-purge database is at
 `/opt/netmon-hub/backups/netmon-before-imac-purge.db` on the VPS.
 
+**Telling a pre-cutover `imac` row from a post-cutover one: read
+`idle_latency_ms`, not the timestamp.** A speedtest row from that probe with
+`idle_latency_ms` under about 1 ms was taken under Colima, because no real path
+from this Mac to a speedtest server is sub-millisecond — the native floor is
+~24 ms. That test is intrinsic to the row, so it keeps working without anyone
+remembering when the container stopped, and it survives a clock skew or a
+restore from the pre-purge backup. The timestamp boundary was 2026-09-13 ~12:30,
+but prefer the marker: rows NULLed by the purge and rows written natively are
+both distinguishable from fiction by it, and only one of those two facts is
+written down anywhere.
+
 The native deployment is three files on the Mac, outside any repo, because that
 box is hand-managed and is not in the homelab ansible inventory:
 
