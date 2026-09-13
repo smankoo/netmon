@@ -78,7 +78,7 @@ def _check_heartbeat(conn, probe: str, now: float) -> None:
         if row["ts"]:
             last_seen = max(last_seen, row["ts"])
     stale_for_min = (now - last_seen) / 60
-    is_bad = stale_for_min > config.PROBE_STALE_MINUTES
+    is_bad = stale_for_min > config.probe_stale_minutes(probe)
     evaluate(
         f"heartbeat:{probe}",
         is_bad,
@@ -164,13 +164,25 @@ def _check_http(conn, now: float) -> None:
 def check_all() -> None:
     with get_conn() as conn:
         now = time.time()
-        probes = sorted({
+        seen = sorted({
             r["probe_name"]
             for table in ("ping_samples", "speed_samples", "modem_samples", "http_samples")
             for r in conn.execute(f"SELECT DISTINCT probe_name FROM {table}")
         })
-        for probe in probes:
+        # Two different questions, so two different probe lists.
+        #
+        # "Is a probe missing?" can only be asked of probes that are supposed to
+        # exist - the ones holding a token (config.EXPECTED_PROBES). Asking it of
+        # every name in the database means a retired probe is reported silent for
+        # as long as its rows are retained, which here was 13 days and counting.
+        #
+        # "Is the connection bad?" is a question about data, so it stays keyed on
+        # the probes that actually have recent rows. These checks are inherently
+        # self-limiting: they need samples inside a trailing window, so a probe
+        # that stopped reporting simply drops out of them.
+        for probe in sorted(config.EXPECTED_PROBES):
             _check_heartbeat(conn, probe, now)
+        for probe in seen:
             _check_loss(conn, probe, now)
             _check_modem(conn, probe, now)
         _check_http(conn, now)
