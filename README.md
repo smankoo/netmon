@@ -92,6 +92,65 @@ The probe's name comes from the token it authenticates with, never from
 anything in the request body - so one probe can't file data under another
 probe's name.
 
+## Splitting collectors across probes
+
+Don't just copy one probe's `.env` to the second host. Two of the four
+collectors are not safe to run on two probes at once:
+
+- **modem** - the Hitron admin UI allows a single concurrent admin session.
+  Two probes logging in on a 15-minute cycle will evict each other, putting
+  auth failures and gaps into *both* probes' DOCSIS history. Run it on
+  exactly one probe.
+- **speed** - a speedtest saturates the uplink by design. Two of them
+  overlapping means each reads roughly half the line, and the loaded-latency
+  figures become meaningless. Either run it on one probe, or stagger it (see
+  below).
+
+**ping** and **http** are the opposite: cheap, and genuinely worth running
+everywhere. Two vantage points are what distinguish "the internet is down"
+from "that one host's link is bad".
+
+Set any interval to `0` to disable a collector. Do *not* disable the modem
+collector by blanking `MODEM_USER`/`MODEM_PASS` - it reports an error row
+every interval instead of going quiet, which pollutes `modem_samples` and
+trips the probe-health alerting.
+
+### Staggering, and why offsets are epoch-anchored
+
+`*_PHASE_OFFSET_SEC` shifts a collector's schedule. Runs are scheduled on
+absolute epoch boundaries (`t % interval == offset`), not relative to process
+start, so two probes half an interval apart stay that way across restarts. A
+startup-relative delay would not: whichever probe restarted last would
+re-anchor to its own start time and the two could drift into lockstep,
+speedtesting on top of each other. The cost of epoch anchoring is that after a
+restart a collector waits up to one full interval before its first sample -
+for `speed` at 1800s that is a visible gap.
+
+### The deployment here
+
+Two probes on one uplink, deliberately measuring the difference between them:
+
+| Collector | `iris` (Pi 4, wired GbE) | `imac` (2.4 GHz Wi-Fi) |
+| --- | --- | --- |
+| ping | 60s, offset 0 | 60s, offset 0 |
+| http | 60s, offset 0 | disabled |
+| speed | 1800s, offset 0 | 1800s, **offset 900** |
+| modem | 900s, offset 0 | disabled |
+
+`speed` runs on both on purpose. Both probes sit behind the same modem, so
+the *difference* between wired iris and Wi-Fi imac isolates what Wi-Fi quality
+is costing - which a single probe can't show. That only works if the two tests
+never overlap, hence the 900s offset.
+
+Two artefacts of this layout, so they aren't later misread as ISP faults:
+
+- Each probe's speedtest inflates the *other* probe's ping latency and loss
+  for its duration - roughly 3% of ping samples, in two predictable windows
+  per hour. Staggering is what separates those windows; it cannot remove them.
+- DOCSIS history is per-probe. Moving the modem collector between hosts
+  splits the series at the cutover, and `netmon_incident_report` filtered to
+  one probe will not see across that boundary.
+
 ## Alerting
 
 If `NTFY_URL` is set (e.g. `https://ntfy.sh/<some-random-topic>`), the hub
