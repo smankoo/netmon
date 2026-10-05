@@ -236,7 +236,7 @@ What triggers a push:
 | Condition | Threshold |
 | --- | --- |
 | Packet loss | ≥ `LOSS_ALERT_PCT` (10%) over the trailing 15 min, min 3 samples |
-| Modem FEC | any uncorrectable errors on a downstream channel |
+| Modem FEC | uncorrectable count on any downstream channel GREW in the last `FEC_WINDOW_MIN` (60) min. The counter is cumulative since boot, so the total alone says nothing about now |
 | HTTP target | 3 consecutive failed checks |
 | Probe silent | nothing received for `PROBE_STALE_MINUTES` (10) |
 

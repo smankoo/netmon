@@ -71,6 +71,12 @@ def probe_stale_minutes(probe: str) -> int:
     return _int(f"PROBE_STALE_MINUTES_{probe.upper().replace('-', '_')}", PROBE_STALE_MINUTES)
 # Packet loss average over a trailing 15-minute window that counts as "bad".
 LOSS_ALERT_PCT = _float("LOSS_ALERT_PCT", 10.0)
+# Modem FEC alerting (see alerts._check_modem). DOCSIS counters are cumulative
+# since modem boot, so alert on GROWTH over a trailing window, not on the total.
+# 60 min spans 4 samples at the 15-min modem poll, so one missed poll can't hide
+# a burst; any growth at all is a real, current line error.
+FEC_WINDOW_MIN = _int("FEC_WINDOW_MIN", 60)
+FEC_ALERT_DELTA = _int("FEC_ALERT_DELTA", 1)
 
 # How long to keep raw samples before they're deleted. 180 days ~= 6 months.
 RETENTION_DAYS = _int("RETENTION_DAYS", 180)
