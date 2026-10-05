@@ -111,22 +111,64 @@ def _check_loss(conn, probe: str, now: float) -> None:
 
 
 def _check_modem(conn, probe: str, now: float) -> None:
+    """Alert on NEW uncorrectable FEC errors, not on the running total.
+
+    DOCSIS `uncorrectable` is cumulative since the modem last booted (see the
+    README's "Dating a modem reboot"). The old check fired whenever the latest
+    sample was > 0, so a single burst kept the alert "bad" until the next modem
+    reboot - which can be weeks. On 2026-10-01 a ~25-minute WAN outage left
+    ch15 at 1144 and the counter never moved again, yet it re-paged every
+    ALERT_COOLDOWN_SEC for four days. A page that cannot clear trains you to
+    ignore the channel, which costs you the real one.
+
+    So compare each channel's counter now against FEC_WINDOW_MIN ago and alert
+    only on growth >= FEC_ALERT_DELTA. A counter that went DOWN means the modem
+    rebooted; the post-boot value is itself all-new errors, so count it as the
+    delta. A channel absent from the baseline (new lock, or no baseline yet) is
+    skipped rather than guessed at.
+    """
     last_ts_row = conn.execute(
-        "SELECT MAX(ts) ts FROM modem_samples WHERE probe_name = ? AND direction = 'downstream'",
+        "SELECT MAX(ts) ts FROM modem_samples WHERE probe_name = ? AND direction = 'downstream' "
+        "AND error IS NULL",
         (probe,),
     ).fetchone()
     if not last_ts_row["ts"]:
         return
-    bad_channels = conn.execute(
-        "SELECT channel_id, uncorrectable FROM modem_samples "
-        "WHERE probe_name = ? AND direction = 'downstream' AND ts = ? AND uncorrectable > 0 "
-        "ORDER BY uncorrectable DESC",
-        (probe, last_ts_row["ts"]),
-    ).fetchall()
-    is_bad = len(bad_channels) > 0
+    latest_ts = last_ts_row["ts"]
+    window = config.FEC_WINDOW_MIN * 60
+    base_ts_row = conn.execute(
+        "SELECT MAX(ts) ts FROM modem_samples WHERE probe_name = ? AND direction = 'downstream' "
+        "AND error IS NULL AND ts <= ?",
+        (probe, latest_ts - window),
+    ).fetchone()
+    if not base_ts_row["ts"]:
+        return  # not enough history yet to tell new errors from old ones
+    base_ts = base_ts_row["ts"]
+
+    def _counts(ts: float) -> dict:
+        rows = conn.execute(
+            "SELECT channel_id, uncorrectable FROM modem_samples "
+            "WHERE probe_name = ? AND direction = 'downstream' AND ts = ? AND uncorrectable IS NOT NULL",
+            (probe, ts),
+        ).fetchall()
+        return {r["channel_id"]: r["uncorrectable"] for r in rows}
+
+    now_c, base_c = _counts(latest_ts), _counts(base_ts)
+    growth = []
+    for ch, cur in now_c.items():
+        if ch not in base_c:
+            continue
+        prev = base_c[ch]
+        delta = cur - prev if cur >= prev else cur  # counter reset = modem reboot
+        if delta >= config.FEC_ALERT_DELTA:
+            growth.append((ch, delta, cur))
+    growth.sort(key=lambda g: g[1], reverse=True)
+    is_bad = len(growth) > 0
+    mins = round((latest_ts - base_ts) / 60)
     if is_bad:
-        detail = ", ".join(f"ch{r['channel_id']}={r['uncorrectable']}" for r in bad_channels[:5])
-        bad_message = f"{probe}: uncorrectable FEC errors on downstream channels ({detail}) - likely a line/plant issue."
+        detail = ", ".join(f"ch{ch} +{d} (total {cur})" for ch, d, cur in growth[:5])
+        bad_message = (f"{probe}: NEW uncorrectable FEC errors in the last {mins} min ({detail}) "
+                       "- the line is erroring right now.")
     else:
         bad_message = ""
     evaluate(
@@ -134,7 +176,7 @@ def _check_modem(conn, probe: str, now: float) -> None:
         is_bad,
         bad_title=f"{probe}: modem line errors",
         bad_message=bad_message,
-        ok_message=f"{probe}: all downstream channels clean again (0 uncorrectable errors).",
+        ok_message=f"{probe}: no new uncorrectable FEC errors in the last {mins} min.",
         tags=["satellite_antenna"],
     )
 
