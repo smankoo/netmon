@@ -232,6 +232,38 @@ def get_summary(probe: str | None = None):
             args_week,
         ).fetchone()
 
+        # Capability metrics (2026-09-24). The probe picks a RANDOM Ookla server each
+        # run, and far/undersized servers cap at 1-100 Mbps regardless of link health.
+        # That drags avg_down far below what the line actually delivers, which once
+        # looked like an ISP fault (the Cogeco "12-31 Mbps" scare) when the line was
+        # fine. A real line fault is slow to EVERY server, so the high percentiles
+        # are the honest read on capability. Report both: avg = typical single-server
+        # experience, p90/best = what the link can actually do.
+        cap_rows = conn.execute(
+            f"SELECT download_mbps FROM speed_samples "
+            f"WHERE ts >= ? AND error IS NULL AND download_mbps IS NOT NULL {probe_filter} "
+            f"ORDER BY download_mbps",
+            args_week,
+        ).fetchall()
+        down_vals = [r["download_mbps"] for r in cap_rows]
+        if down_vals:
+            def _pct(frac):
+                return down_vals[min(len(down_vals) - 1, int(len(down_vals) * frac))]
+            capability = {
+                "n": len(down_vals),
+                "down_p50": round(_pct(0.50), 1),
+                "down_p90": round(_pct(0.90), 1),
+                "down_best": round(down_vals[-1], 1),
+                "distinct_servers": conn.execute(
+                    f"SELECT COUNT(DISTINCT server_name) c FROM speed_samples "
+                    f"WHERE ts >= ? AND error IS NULL {probe_filter}",
+                    args_week,
+                ).fetchone()["c"],
+            }
+        else:
+            capability = None
+
+
         modem_ts_filter = "AND probe_name = ?" if probe else ""
         modem_ts_args = (probe,) if probe else ()
         last_modem_ts_row = conn.execute(
@@ -267,6 +299,7 @@ def get_summary(probe: str | None = None):
     return JSONResponse({
         "ping_24h": [dict(r) for r in ping_24h],
         "speed_7d": dict(speed_7d) if speed_7d else None,
+        "speed_capability_7d": capability,
         "worst_channels_latest": worst_channels,
         "http_24h": http_24h,
         "generated_at": now,
