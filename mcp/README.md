@@ -149,10 +149,10 @@ In `~/.hermes/config.yaml` under `mcp_servers`:
 
 ```yaml
   netmon:
-    command: /Users/owner/p/netmon/mcp/.venv/bin/python
+    command: ~/p/netmon/mcp/.venv/bin/python
     args:
-      - /Users/owner/p/netmon/mcp/run_server.py
-    cwd: /Users/owner/p/netmon/mcp
+      - ~/p/netmon/mcp/run_server.py
+    cwd: ~/p/netmon/mcp
     timeout: 120
     connect_timeout: 30
     enabled: true
